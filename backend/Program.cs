@@ -3,7 +3,19 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using backend.Data;
 using backend.Models;
+using DotNetEnv;
 using Microsoft.EntityFrameworkCore;
+
+var envFile = new[]
+{
+    Path.Combine(Directory.GetCurrentDirectory(), ".env"),
+    Path.Combine(Directory.GetCurrentDirectory(), "backend", ".env")
+}.FirstOrDefault(File.Exists);
+
+if (envFile is not null)
+{
+    Env.Load(envFile);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
