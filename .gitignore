@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.kilo/
+.env
+.env.*
+!.env.example
+backend/dietapp.db*
+dotnet-install.ps1
