@@ -91,27 +91,75 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
         double targetFats = (targetCalories * 0.25) / 9.0; // 25% of calories from fat
         double targetCarbs = (targetCalories - (targetProtein * 4.0) - (targetFats * 9.0)) / 4.0;
 
-        var prompt = $"User Profile: Height {inputDto.HeightCm}cm, Weight {inputDto.WeightKg}kg, Goal: {inputDto.Goal}. " +
-                     $"**EXACT TARGETS**: Calories: {Math.Round(targetCalories)}kcal, Protein: {Math.Round(targetProtein)}g, Carbs: {Math.Round(targetCarbs)}g, Fats: {Math.Round(targetFats)}g. " +
-                     $"Analyze this meal: '{inputDto.FoodInput}'. " +
-                     "Return a JSON object with exactly 5 string fields: " +
-                     "'eatMore', " +
-                     "'eatLess', " +
-                     "'activity', " +
-                     "'caloriesAdvice' (Explicitly state the EXACT daily calorie target I gave you, estimate the calories of this meal, and state the exact remaining calories. Use short sentences.), " +
-                     "'macroAdvice' (You MUST use line breaks (\\n) to format this as a clean list. Example format: 'Protein: 100g target | 20g meal | 80g remaining\\nCarbs: ...\\nFats: ...\\nFoods to eat: ...'. DO NOT write a dense paragraph.), " +
-                     "'nutritionBreakdown' (An object with 'foods': an array of objects with 'name', 'amount', 'calories', 'protein', 'carbs', and 'fat'; and 'total': an object with numeric 'calories', 'protein', 'carbs', and 'fat'. Include each food mentioned separately, estimate amounts when missing, and make the total equal the sum of the foods. Values are estimates.) " +
-                     "Do not include markdown formatting, backticks, or any other text.";
+        var prompt = $"Profile: height {inputDto.HeightCm} cm, weight {inputDto.WeightKg} kg, goal {inputDto.Goal}. " +
+                     $"Daily targets: {Math.Round(targetCalories)} kcal, {Math.Round(targetProtein)} g protein, " +
+                     $"{Math.Round(targetCarbs)} g carbs, {Math.Round(targetFats)} g fat. " +
+                     $"Analyze this meal: {inputDto.FoodInput}. " +
+                     "Estimate nutrition for each listed food. Give concise, practical advice. " +
+                     "Leave eatLess empty unless the meal includes something notably unhealthy. " +
+                     "For macroAdvice, put protein, carbs, fats, and foods to eat on separate lines.";
 
         var requestBody = new
         {
             model = "openai/gpt-oss-20b",
             messages = new[]
             {
-                new { role = "system", content = "You are a helpful nutrition assistant. Respond ONLY with a raw JSON object containing 'eatMore', 'eatLess', 'activity', 'caloriesAdvice', and 'macroAdvice' as strings, plus 'nutritionBreakdown' as an object shaped exactly as requested. Nutrition values must be numeric estimates; include one food item for each food the user listed, and totals must equal the sum of the items. Keep advice highly practical, concise, and realistic. CRITICAL: Do NOT give generic advice. If the user's meal is healthy or small, leave 'eatLess' as an empty string (\"\"). Only populate 'eatLess' if they actually ate something unhealthy (like too much sugar/fried food in this specific meal). Do not suggest leafy vegetables." },
+                new { role = "system", content = "You are a concise nutrition assistant. Estimate realistic nutrition for each food, and do not suggest leafy vegetables." },
                 new { role = "user", content = prompt }
             },
-            response_format = new { type = "json_object" }
+            max_completion_tokens = 2048,
+            include_reasoning = false,
+            response_format = new
+            {
+                type = "json_schema",
+                json_schema = new
+                {
+                    name = "nutrition_analysis",
+                    strict = true,
+                    schema = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            eatMore = new { type = "string" },
+                            eatLess = new { type = "string" },
+                            activity = new { type = "string" },
+                            caloriesAdvice = new { type = "string" },
+                            macroAdvice = new { type = "string" },
+                            nutritionBreakdown = new
+                            {
+                                type = "object",
+                                properties = new
+                                {
+                                    foods = new
+                                    {
+                                        type = "array",
+                                        items = new
+                                        {
+                                            type = "object",
+                                            properties = new
+                                            {
+                                                name = new { type = "string" },
+                                                amount = new { type = "string" },
+                                                calories = new { type = "number" },
+                                                protein = new { type = "number" },
+                                                carbs = new { type = "number" },
+                                                fat = new { type = "number" }
+                                            },
+                                            required = new[] { "name", "amount", "calories", "protein", "carbs", "fat" },
+                                            additionalProperties = false
+                                        }
+                                    }
+                                },
+                                required = new[] { "foods" },
+                                additionalProperties = false
+                            }
+                        },
+                        required = new[] { "eatMore", "eatLess", "activity", "caloriesAdvice", "macroAdvice", "nutritionBreakdown" },
+                        additionalProperties = false
+                    }
+                }
+            }
         };
 
         var response = await client.PostAsJsonAsync(requestUrl, requestBody);
@@ -130,8 +178,7 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
         var nutritionBreakdown = analysis?.NutritionBreakdown;
         if (nutritionBreakdown is null ||
             nutritionBreakdown.Foods is null ||
-            nutritionBreakdown.Foods.Count == 0 ||
-            nutritionBreakdown.Total is null)
+            nutritionBreakdown.Foods.Count == 0)
         {
             return Results.Problem("The nutrition service did not return a per-food breakdown and total.");
         }

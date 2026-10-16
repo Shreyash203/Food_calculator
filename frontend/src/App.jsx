@@ -107,7 +107,7 @@ function App() {
         fetchHistory()
       } else {
         const errData = await res.json()
-        alert("Error: " + (errData.message || "Something went wrong!"))
+        alert("Error: " + (errData.message || errData.detail || errData.title || "Something went wrong!"))
       }
     } catch (error) {
       console.error("Failed to log meal:", error)
