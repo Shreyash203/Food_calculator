@@ -63,7 +63,8 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [latestResult, setLatestResult] = useState(null)
 
-  const backendUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/meals';
+  const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '')
+  const backendUrl = `${apiBase}/api/meals`
   const latestNutrition = latestResult ? parseNutritionBreakdown(latestResult.nutritionBreakdown) : null
 
   useEffect(() => {
