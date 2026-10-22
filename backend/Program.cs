@@ -107,7 +107,9 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
                      $"Daily targets: {Math.Round(targetCalories)} kcal, {Math.Round(targetProtein)} g protein, " +
                      $"{Math.Round(targetCarbs)} g carbs, {Math.Round(targetFats)} g fat. " +
                      $"Analyze this meal: {inputDto.FoodInput}. " +
-                     "Estimate nutrition for each listed food. Give concise, practical advice. " +
+                     "Estimate each listed food as its own serving using only its stated quantity; do not split quantities or change one food's estimate because other foods are listed. " +
+                     "For named mixed dishes, include the ingredients in the dish name instead of estimating a simpler substitute (for example, soybean rice is not plain rice). " +
+                     "If a dish or portion is ambiguous, make a reasonable assumption and state it briefly in amount. Keep every advice field to one short sentence. " +
                      "Leave eatLess empty unless the meal includes something notably unhealthy. " +
                      "For macroAdvice, put protein, carbs, fats, and foods to eat on separate lines.";
 
@@ -119,7 +121,7 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
                 new { role = "system", content = "You are a concise nutrition assistant. Estimate realistic nutrition for each food, and do not suggest leafy vegetables." },
                 new { role = "user", content = prompt }
             },
-            max_completion_tokens = 2048,
+            max_completion_tokens = 4096,
             include_reasoning = false,
             response_format = new
             {
