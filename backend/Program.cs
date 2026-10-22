@@ -75,6 +75,11 @@ app.MapGet("/api/meals", async (AppDbContext db) =>
 
 app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpClientFactory httpClientFactory, IConfiguration config) =>
 {
+    if (inputDto.AgeYears is < 13 or > 120)
+    {
+        return Results.BadRequest(new { message = "Age must be between 13 and 120 years." });
+    }
+
     var apiKey = config["GroqApiKey"];
     
     if (string.IsNullOrEmpty(apiKey) || apiKey == "YOUR_GROQ_API_KEY_HERE")
@@ -89,8 +94,8 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
         
         var requestUrl = "https://api.groq.com/openai/v1/chat/completions";
 
-        // Calculate approximate BMR/TDEE (assuming average age 25 for bachelor)
-        double bmr = (10 * inputDto.WeightKg) + (6.25 * inputDto.HeightCm) - (5 * 25) + 5;
+        // Estimate BMR/TDEE using the standard male formula and moderate activity.
+        double bmr = (10 * inputDto.WeightKg) + (6.25 * inputDto.HeightCm) - (5 * inputDto.AgeYears) + 5;
         double tdee = bmr * 1.55; // Moderate activity
         double targetCalories = tdee;
         if (inputDto.Goal.StartsWith("Bulk", StringComparison.OrdinalIgnoreCase)) targetCalories += 500;
@@ -103,13 +108,15 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
         double targetFats = (targetCalories * 0.25) / 9.0; // 25% of calories from fat
         double targetCarbs = (targetCalories - (targetProtein * 4.0) - (targetFats * 9.0)) / 4.0;
 
-        var prompt = $"Profile: height {inputDto.HeightCm} cm, weight {inputDto.WeightKg} kg, goal {inputDto.Goal}. " +
+        var prompt = $"Profile: age {inputDto.AgeYears}, height {inputDto.HeightCm} cm, weight {inputDto.WeightKg} kg, goal {inputDto.Goal}. " +
                      $"Daily targets: {Math.Round(targetCalories)} kcal, {Math.Round(targetProtein)} g protein, " +
                      $"{Math.Round(targetCarbs)} g carbs, {Math.Round(targetFats)} g fat. " +
                      $"Analyze this meal: {inputDto.FoodInput}. " +
                      "Estimate each listed food as its own serving using only its stated quantity; do not split quantities or change one food's estimate because other foods are listed. " +
-                     "For named mixed dishes, include the ingredients in the dish name instead of estimating a simpler substitute (for example, soybean rice is not plain rice). " +
+                     "For named mixed dishes, account for the named ingredients instead of estimating a simpler substitute (for example, soybean rice is not plain rice). " +
+                     "Include cooking oil, ghee, butter, sauces, and calorie-containing masala ingredients when the user mentions them; do not assume unmentioned amounts, and note when they could materially change the estimate. " +
                      "If a dish or portion is ambiguous, make a reasonable assumption and state it briefly in amount. Keep every advice field to one short sentence. " +
+                     "This request describes one meal only: do not treat it as the user's entire day or claim a daily calorie or macro shortfall based on this entry alone. " +
                      "Leave eatLess empty unless the meal includes something notably unhealthy. " +
                      "For macroAdvice, put protein, carbs, fats, and foods to eat on separate lines.";
 
@@ -118,7 +125,7 @@ app.MapPost("/api/meals", async (AppDbContext db, MealInputDto inputDto, IHttpCl
             model = "openai/gpt-oss-20b",
             messages = new[]
             {
-                new { role = "system", content = "You are a concise nutrition assistant. Estimate realistic nutrition for each food, and do not suggest leafy vegetables." },
+                new { role = "system", content = "You are a concise nutrition assistant. Estimate realistic nutrition for each food, including explicitly mentioned cooking ingredients, and do not suggest leafy vegetables." },
                 new { role = "user", content = prompt }
             },
             max_completion_tokens = 4096,
@@ -237,6 +244,7 @@ app.Run();
 public class MealInputDto
 {
     public string FoodInput { get; set; } = string.Empty;
+    public int AgeYears { get; set; }
     public double HeightCm { get; set; }
     public double WeightKg { get; set; }
     public string Goal { get; set; } = "Maintain";

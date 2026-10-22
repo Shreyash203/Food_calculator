@@ -51,11 +51,134 @@ function NutritionBreakdown({ data }) {
   )
 }
 
+function getDailyTargets(heightCm, weightKg, ageYears, goal) {
+  const height = Number(heightCm)
+  const weight = Number(weightKg)
+  const age = Number(ageYears)
+  if (!Number.isFinite(height) || !Number.isFinite(weight) || !Number.isFinite(age) ||
+      height <= 0 || weight <= 0 || age < 13 || age > 120) return null
+
+  const bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5
+  let calories = bmr * 1.55
+  if (goal.startsWith('Bulk')) calories += 500
+  if (goal.startsWith('Cut')) calories -= 500
+
+  let proteinMultiplier = 1.6
+  if (goal.startsWith('Bulk')) proteinMultiplier = 1.8
+  if (goal.startsWith('Cut')) proteinMultiplier = 2
+
+  const protein = weight * proteinMultiplier
+  const fat = (calories * 0.25) / 9
+  const carbs = (calories - (protein * 4) - (fat * 9)) / 4
+  return { calories, protein, carbs, fat }
+}
+
+function getLocalDateKey(value) {
+  const date = new Date(value)
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
+function DailyNutritionGuide({ meals, heightCm, weightKg, ageYears, goal }) {
+  const targets = getDailyTargets(heightCm, weightKg, ageYears, goal)
+  if (!targets) return null
+
+  const todaysMeals = meals.filter(meal => getLocalDateKey(meal.date) === getLocalDateKey(Date.now()))
+  const consumed = todaysMeals.reduce((total, meal) => {
+    const breakdown = parseNutritionBreakdown(meal.nutritionBreakdown)
+    return {
+      calories: total.calories + (Number(breakdown?.total?.calories) || 0),
+      protein: total.protein + (Number(breakdown?.total?.protein) || 0),
+      carbs: total.carbs + (Number(breakdown?.total?.carbs) || 0),
+      fat: total.fat + (Number(breakdown?.total?.fat) || 0)
+    }
+  }, { calories: 0, protein: 0, carbs: 0, fat: 0 })
+  const remaining = {
+    calories: targets.calories - consumed.calories,
+    protein: targets.protein - consumed.protein,
+    carbs: targets.carbs - consumed.carbs,
+    fat: targets.fat - consumed.fat
+  }
+  const format = value => Math.max(0, Math.round(value))
+  const suggestions = [
+    {
+      key: 'carbs',
+      label: 'Carbohydrates',
+      threshold: 15,
+      portion: '1 cup cooked rice (about 200 kcal, 45 g carbs)'
+    },
+    {
+      key: 'fat',
+      label: 'Fats',
+      threshold: 10,
+      portion: '1 tbsp peanut butter (about 95 kcal, 8 g fat)'
+    },
+    {
+      key: 'protein',
+      label: 'Protein',
+      threshold: 15,
+      portion: '2 eggs (about 140 kcal, 12 g protein)'
+    }
+  ]
+    .filter(item => remaining[item.key] > item.threshold)
+    .sort((left, right) => (remaining[right.key] / targets[right.key]) - (remaining[left.key] / targets[left.key]))
+    .slice(0, 2)
+
+  return (
+    <div className="border border-indigo-200 rounded-lg bg-indigo-50/50 p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-indigo-950">Your day so far</h3>
+        <p className="text-xs text-slate-600 mt-1">
+          Based on {todaysMeals.length} {todaysMeals.length === 1 ? 'entry' : 'entries'} logged today and your estimated daily targets.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          ['Calories', consumed.calories, targets.calories, 'kcal'],
+          ['Protein', consumed.protein, targets.protein, 'g'],
+          ['Carbs', consumed.carbs, targets.carbs, 'g'],
+          ['Fat', consumed.fat, targets.fat, 'g']
+        ].map(([label, amount, target, unit]) => (
+          <div key={label} className="bg-white rounded-md p-3 border border-indigo-100">
+            <p className="text-xs font-medium text-slate-500">{label}</p>
+            <p className="text-sm font-semibold text-slate-800 mt-1">{Math.round(amount)} / {Math.round(target)} {unit}</p>
+            <p className="text-xs text-indigo-700 mt-1">
+              {remaining[label.toLowerCase()] >= 0
+                ? `${format(remaining[label.toLowerCase()])} ${unit} left`
+                : `${format(-remaining[label.toLowerCase()])} ${unit} over`}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-indigo-100 pt-3">
+        <h4 className="text-sm font-semibold text-slate-800">What to eat next</h4>
+        {remaining.calories <= 150 ? (
+          <p className="text-sm text-slate-600 mt-1">You’re close to your estimated calorie target. Choose your next meal based on hunger; you don’t need to force a macro target.</p>
+        ) : suggestions.length > 0 ? (
+          <>
+            <p className="text-sm text-slate-600 mt-1">
+              You have about {format(remaining.calories)} kcal left. To work toward the largest remaining macro gaps, consider either of these options:
+            </p>
+            <ul className="list-disc pl-5 mt-2 space-y-1 text-sm text-slate-700">
+              {suggestions.map(item => <li key={item.key}>{item.label}: {item.portion}</li>)}
+            </ul>
+          </>
+        ) : (
+          <p className="text-sm text-slate-600 mt-1">You have about {format(remaining.calories)} kcal left. A balanced snack or meal can help you move toward your daily target.</p>
+        )}
+      </div>
+      <p className="text-xs text-slate-500">
+        Nutrition values and targets are estimates. Targets use your entered age, assume moderate activity, and use a standard male calorie formula. Suggestions are options, not a requirement to eat more.
+      </p>
+    </div>
+  )
+}
+
 function App() {
+  const [ageYears, setAgeYears] = useState(() => localStorage.getItem('ageYears') || 25)
   const [heightCm, setHeightCm] = useState(() => localStorage.getItem('heightCm') || 175)
   const [weightKg, setWeightKg] = useState(() => localStorage.getItem('weightKg') || 70)
   const [goal, setGoal] = useState(() => localStorage.getItem('goal') || 'Maintain')
-  const [showProfile, setShowProfile] = useState(() => !localStorage.getItem('heightCm'))
+  const [showProfile, setShowProfile] = useState(() => !localStorage.getItem('heightCm') || !localStorage.getItem('ageYears'))
   const [showHistory, setShowHistory] = useState(false)
 
   const [foodInput, setFoodInput] = useState('')
@@ -68,10 +191,11 @@ function App() {
   const latestNutrition = latestResult ? parseNutritionBreakdown(latestResult.nutritionBreakdown) : null
 
   useEffect(() => {
+    localStorage.setItem('ageYears', ageYears)
     localStorage.setItem('heightCm', heightCm)
     localStorage.setItem('weightKg', weightKg)
     localStorage.setItem('goal', goal)
-  }, [heightCm, weightKg, goal])
+  }, [ageYears, heightCm, weightKg, goal])
 
   useEffect(() => {
     fetchHistory()
@@ -98,7 +222,7 @@ function App() {
       const res = await fetch(backendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ foodInput, heightCm: Number(heightCm), weightKg: Number(weightKg), goal })
+        body: JSON.stringify({ foodInput, ageYears: Number(ageYears), heightCm: Number(heightCm), weightKg: Number(weightKg), goal })
       })
 
       if (res.ok) {
@@ -153,7 +277,11 @@ function App() {
               
               {/* Profile Toggle Area */}
               {showProfile ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-5 border-b border-slate-100">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-5 border-b border-slate-100">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Age (years)</label>
+                    <input type="number" min="13" max="120" className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow" value={ageYears} onChange={e => setAgeYears(e.target.value)} required />
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Height (cm)</label>
                     <input type="number" className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow" value={heightCm} onChange={e => setHeightCm(e.target.value)} required />
@@ -179,7 +307,7 @@ function App() {
               ) : (
                 <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-3 py-2 rounded-md border border-slate-100">
                   <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                  <span>{heightCm}cm &bull; {weightKg}kg &bull; {goal}</span>
+                  <span>{ageYears} years &bull; {heightCm}cm &bull; {weightKg}kg &bull; {goal}</span>
                 </div>
               )}
 
@@ -226,18 +354,20 @@ function App() {
               
               <NutritionBreakdown data={latestNutrition} />
 
+              <DailyNutritionGuide meals={meals} heightCm={heightCm} weightKg={weightKg} ageYears={ageYears} goal={goal} />
+
               {/* Main Metrics */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="border border-slate-200 rounded-lg p-4 bg-white relative overflow-hidden">
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Energy Balance</h3>
+                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">AI note for this entry</h3>
                   <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-line">{latestResult.caloriesAdvice}</p>
                 </div>
                 
                 {latestResult.macroAdvice && (
                   <div className="border border-slate-200 rounded-lg p-4 bg-white relative overflow-hidden">
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500"></div>
-                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Macronutrient Targets</h3>
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">AI macro note for this entry</h3>
                     <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-line">{latestResult.macroAdvice}</p>
                   </div>
                 )}
