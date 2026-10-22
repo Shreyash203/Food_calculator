@@ -179,7 +179,7 @@ function App() {
   const [weightKg, setWeightKg] = useState(() => localStorage.getItem('weightKg') || 70)
   const [goal, setGoal] = useState(() => localStorage.getItem('goal') || 'Maintain')
   const [showProfile, setShowProfile] = useState(() => !localStorage.getItem('heightCm') || !localStorage.getItem('ageYears'))
-  const [showHistory, setShowHistory] = useState(false)
+  const [showHistory, setShowHistory] = useState(true)
 
   const [foodInput, setFoodInput] = useState('')
   const [meals, setMeals] = useState([])
@@ -228,6 +228,10 @@ function App() {
       if (res.ok) {
         const newMeal = await res.json()
         setLatestResult(newMeal)
+        setMeals(previousMeals => [
+          newMeal,
+          ...previousMeals.filter(meal => meal.id !== newMeal.id)
+        ])
         setFoodInput('')
         fetchHistory()
       } else {
@@ -420,7 +424,7 @@ function App() {
             className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors"
           >
             <svg className={`w-4 h-4 transition-transform duration-200 ${showHistory ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-            {showHistory ? 'Hide Activity Log' : `View Activity Log (${meals.length})`}
+            {showHistory ? 'Hide Meal History' : `View Meal History (${meals.length})`}
           </button>
         </div>
 
@@ -428,7 +432,7 @@ function App() {
         {showHistory && (
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in slide-in-from-top-4">
             <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-800">Activity Log</h2>
+              <h2 className="text-base font-semibold text-slate-800">Meal History</h2>
             </div>
             
             <div className="max-h-[600px] overflow-y-auto p-0">
